@@ -31,7 +31,7 @@ import "github.com/kz26/m3u8"
 
 const VERSION = "1.0.5"
 
-var USER_AGENT string
+const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.84 Safari/537.36"
 
 var client = &http.Client{}
 
@@ -84,25 +84,21 @@ func getPlaylist(urlStr string, recTime time.Duration, useLocalTime bool, dlc ch
 	startTime := time.Now()
 	var recDuration time.Duration = 0
 	cache := lru.New(1024)
-	playlistUrl, err := url.Parse(urlStr)
+	playlistUrl, err := url.Parse("https://media.wanmen.org/")
 	if err != nil {
 		log.Fatal(err)
 	}
 	for {
-		req, err := http.NewRequest("GET", urlStr, nil)
+        file,err := os.Open(urlStr)
+        if err != nil {
+            log.Fatal(err)
+        }
+        defer file.Close()
+
+		playlist, listType, err := m3u8.DecodeFrom(file, true)
 		if err != nil {
 			log.Fatal(err)
 		}
-		resp, err := doRequest(client, req)
-		if err != nil {
-			log.Print(err)
-			time.Sleep(time.Duration(3) * time.Second)
-		}
-		playlist, listType, err := m3u8.DecodeFrom(resp.Body, true)
-		if err != nil {
-			log.Fatal(err)
-		}
-		resp.Body.Close()
 		if listType == m3u8.MEDIA {
 			mpl := playlist.(*m3u8.MediaPlaylist)
 			for _, v := range mpl.Segments {
@@ -156,23 +152,14 @@ func main() {
 
 	duration := flag.Duration("t", time.Duration(0), "Recording duration (0 == infinite)")
 	useLocalTime := flag.Bool("l", false, "Use local time to track duration instead of supplied metadata")
-	flag.StringVar(&USER_AGENT, "ua", fmt.Sprintf("gohls/%v", VERSION), "User-Agent for HTTP client")
 	flag.Parse()
 
 	os.Stderr.Write([]byte(fmt.Sprintf("gohls %v - HTTP Live Streaming (HLS) downloader\n", VERSION)))
 	os.Stderr.Write([]byte("Copyright (C) 2013-2014 Kevin Zhang. Licensed for use under the GNU GPL version 3.\n"))
 
-	if flag.NArg() < 2 {
-		os.Stderr.Write([]byte("Usage: gohls [-l=bool] [-t duration] [-ua user-agent] media-playlist-url output-file\n"))
-		flag.PrintDefaults()
-		os.Exit(2)
-	}
-
-	if !strings.HasPrefix(flag.Arg(0), "http") {
-		log.Fatal("Media playlist url must begin with http/https")
-	}
-
 	msChan := make(chan *Download, 1024)
 	go getPlaylist(flag.Arg(0), *duration, *useLocalTime, msChan)
-	downloadSegment(flag.Arg(1), msChan, *duration)
+
+	out := strings.Replace(flag.Arg(0), "m3u8", "ts", -1)
+	downloadSegment(out, msChan, *duration)
 }
